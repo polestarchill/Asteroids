@@ -134,6 +134,9 @@ class Ship(pygame.sprite.Sprite):
         self.velocity = pygame.Vector2(0, 0)
         self.last_shot= 0
         self.radius = self.rect.width // 2
+        self.ship_lives = 3
+        self.invincible = False
+        self.invincible_start = 0
     def movement(self):
         keys = pygame.key.get_pressed()
         movements = ( keys[pygame.K_LEFT] or keys[pygame.K_RIGHT]  or keys[pygame.K_UP])
@@ -190,7 +193,11 @@ class Ship(pygame.sprite.Sprite):
         if self.position.y < 0-self.radius:
             self.position.y = 600+self.radius
         self.rect.center = self.position
-        
+        if self.invincible:
+            elapsed = pygame.time.get_ticks() - self.invincible_start
+
+            if elapsed > 3000:
+                self.invincible = False
 ship = pygame.sprite.GroupSingle()
 ship.add(Ship())
 asteroids= pygame.sprite.Group()
@@ -200,11 +207,11 @@ pygame.time.set_timer(spawn_asteroid,3000)
 background = pygame.image.load('Assets/background.jpg').convert_alpha()
 background = pygame.transform.grayscale(background)
 background = pygame.transform.scale_by(background,0.5)
-score = 0
-Menu = 0
-playing = 1
-game_over = 2
-game_state = Menu
+SCORE = 0
+MENU = 0
+PLAYING = 1
+GAMEOVER = 2
+game_state = MENU
 Title_font = pygame.font.Font(font_dir, 100)
 menu_font = pygame.font.Font(font_dir, 70)
 def fire_bullets():
@@ -214,7 +221,7 @@ def fire_bullets():
     position = quantities[0] + forward*25
     bullets.add(Bullets(position,forward))
 def bullet_collision(bullets, asteroids):
-    global score
+    global SCORE
     collision =pygame.sprite.groupcollide(bullets, asteroids, True, False, pygame.sprite.collide_mask)
     for  value in collision.values():
         for asteroid in value:
@@ -229,7 +236,7 @@ def bullet_collision(bullets, asteroids):
                 medium_explosion.play()
                 asteroid.kill()
             elif asteroid.stage == 1:
-                score += 5
+                SCORE += 5
                 small_explosion.play()
                 asteroid.kill()
 def gameover(score_surf, score_rect):
@@ -243,16 +250,25 @@ def gameover(score_surf, score_rect):
     screen.blit(Score, Score_rect)
     screen.blit(play_game, play_game.get_rect(center =(400,450)))
 
+
     
-def ship_collision(ship, asteroids):
+def ship_collision(ship_given, asteroids):
     global game_state
-    collision = pygame.sprite.groupcollide(ship,asteroids,True, False, pygame.sprite.collide_mask) 
-    if collision:
-        thrust.stop()
-        game_over_sound.play()
-        pygame.mixer.music.stop()
-        game_state = game_over
+    collision = pygame.sprite.groupcollide(ship,asteroids,False, False, pygame.sprite.collide_mask) 
+    if collision and not ship.sprite.invincible:
+        ship.sprite.ship_lives -= 1
         
+        if ship.sprite.ship_lives <=0:
+            thrust.stop()
+            game_over_sound.play()
+            pygame.mixer.music.stop()
+            game_state = GAMEOVER
+        else:
+            ship.sprite.position = pygame.Vector2(400, 300)
+            ship.sprite.velocity = pygame.Vector2(0, 0)
+
+            ship.sprite.invincible = True
+            ship.sprite.invincible_start = pygame.time.get_ticks()
 def menu():
     screen.blit(background, (0,0))
     game_text = Title_font.render("ASTEROIDS",False,'white')
@@ -264,53 +280,60 @@ def menu():
     screen.blit(play_game, play_game_rect)
     
 def restart():
-    global score  
+    global SCORE  
     asteroids.empty()
     asteroids.add(Asteroids())
     bullets.empty()
     ship.add(Ship())
-    score = 0
+    SCORE = 0
     pygame.mixer.music.play(-1)
 
 while is_running:
     
-    Score_surf = menu_font.render(f"Score: {score}",False, 'white')
+    Score_surf = menu_font.render(f"Score: {SCORE}",False, 'white')
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             pygame.quit()
             exit()
-        if game_state == Menu:
+        if game_state == MENU:
             
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_SPACE:
-                    game_state = playing
+                    game_state = PLAYING
 
-        elif game_state == playing:
+        elif game_state == PLAYING:
             if event.type == spawn_asteroid:
                 asteroids.add(Asteroids(3))
 
-        elif game_state == game_over:
+        elif game_state == GAMEOVER:
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_r:
                     restart()
-                    game_state = playing
+                    game_state = PLAYING
 
-    if game_state == Menu:
+    if game_state == MENU:
         menu()
         
-    if game_state == playing:
+    if game_state == PLAYING:
         screen.blit(background, (0,0))
         ship.update()
         asteroids.update()
         bullets.update()
         bullets.draw(screen)
-        ship.draw(screen)
+        for i in range(ship.sprite.ship_lives):
+            ship_rect = ship_img.get_rect(topright=(780 - i * 40, 20))
+            screen.blit(ship_img, ship_rect)
+        if ship.sprite.invincible:
+            if (pygame.time.get_ticks() // 150) % 2 == 0:
+                ship.draw(screen)
+        else:
+            ship.draw(screen)
         asteroids.draw(screen)
         bullet_collision(bullets,asteroids)
-        ship_collision(ship, asteroids)
-        Score_rect_playing = Score_surf.get_rect(topleft=(20,20))
+        ship_collision(ship,asteroids)
+        Score_rect_playing = Score_surf.get_rect(topleft=(20,40))
         screen.blit(Score_surf, Score_rect_playing)
-    if game_state == game_over:
+    if game_state == GAMEOVER:
         Score_rect = Score_surf.get_rect(center = (400, 200))
         gameover(Score_surf,Score_rect)
     pygame.display.update()
