@@ -16,10 +16,14 @@ asteroid_image_small = pygame.image.load(r'Assets\Retina\meteor_tiny.png').conve
 asteroid_image_large = pygame.transform.smoothscale(asteroid_image_large,(90,90))
 asteroid_image_medium = pygame.transform.smoothscale(asteroid_image_medium,(90,90))
 asteroid_image_small = pygame.transform.smoothscale(asteroid_image_small,(120,120))
-bullets_img = pygame.image.load(r'Assets\Retina\effect_yellow.png').convert_alpha()
+ship_moving1 = pygame.image.load(r'Assets\Retina/ship_moving1.png').convert_alpha()
+ship_moving1 = pygame.transform.smoothscale_by(ship_moving1, 0.8)
+ship_moving2 = pygame.image.load(r'Assets\Retina/ship_moving2.png').convert_alpha()
+ship_moving2 = pygame.transform.smoothscale_by(ship_moving2, 0.8)
+bullets_img = pygame.image.load(r'Assets\Retina\effect_purple.png').convert_alpha()
 bullets_img=pygame.transform.scale(bullets_img, (10,10))
 ship_img =  pygame.image.load(r'Assets\Retina\ship_E.png').convert_alpha()
-ship_img=pygame.transform.smoothscale_by(ship_img,0.6)
+ship_img = pygame.transform.smoothscale_by(ship_img, 0.8)
 ship_rect = ship_img.get_rect(center=(400,300))
 
 pygame.mixer.music.load("sound/bgm.ogg")
@@ -27,8 +31,10 @@ pygame.mixer.music.set_volume(0.4)
 pygame.mixer.music.play(-1)
 thrust = pygame.mixer.Sound('sound/thrust.wav')
 thrust.set_volume(0.5)
+ship_explode_sound = pygame.mixer.Sound('sound/ship_explode.wav')
+ship_explode_sound.set_volume(0.2)
 game_over_sound = pygame.mixer.Sound('sound/game_over.wav')
-game_over_sound.set_volume(0.4)
+game_over_sound.set_volume(0.2)
 big_explosion = pygame.mixer.Sound('sound/bangLarge.wav')
 medium_explosion = pygame.mixer.Sound('sound/bangMedium.wav')
 small_explosion = pygame.mixer.Sound('sound/bangSmall.wav')
@@ -137,6 +143,8 @@ class Ship(pygame.sprite.Sprite):
         self.ship_lives = 3
         self.invincible = False
         self.invincible_start = 0
+        self.moving1 = ship_moving1
+        self.moving2 = ship_moving2
     def movement(self):
         keys = pygame.key.get_pressed()
         movements = ( keys[pygame.K_LEFT] or keys[pygame.K_RIGHT]  or keys[pygame.K_UP])
@@ -155,6 +163,7 @@ class Ship(pygame.sprite.Sprite):
             
             
         if keys[pygame.K_UP]:
+            self.engine_uptime = pygame.time.get_ticks()
             forward = pygame.Vector2(0,-1)
             forward.rotate_ip(-self.angle)
             acceleration = forward*0.05
@@ -177,7 +186,16 @@ class Ship(pygame.sprite.Sprite):
     def update(self):
         self.movement()
         self.fire()
-        self.image = pygame.transform.rotate(self.original_image,self.angle )
+        if self.engine:
+            if (pygame.time.get_ticks() // 160) %2:
+                self.image = pygame.transform.rotate(self.moving1,self.angle)
+
+            else:
+                self.image = pygame.transform.rotate(self.moving2,self.angle)
+
+            
+        else:
+            self.image = pygame.transform.rotate(self.original_image,self.angle )
         self.mask = pygame.mask.from_surface(self.image)
         self.rect = self.image.get_rect(center=self.position)
         self.velocity *= 0.99
@@ -212,6 +230,8 @@ MENU = 0
 PLAYING = 1
 GAMEOVER = 2
 game_state = MENU
+death_time = 0
+gameover_played = False
 Title_font = pygame.font.Font(font_dir, 100)
 menu_font = pygame.font.Font(font_dir, 70)
 def fire_bullets():
@@ -253,14 +273,14 @@ def gameover(score_surf, score_rect):
 
     
 def ship_collision(ship_given, asteroids):
-    global game_state
+    global game_state, death_time
     collision = pygame.sprite.groupcollide(ship,asteroids,False, False, pygame.sprite.collide_mask) 
     if collision and not ship.sprite.invincible:
         ship.sprite.ship_lives -= 1
-        
+        ship_explode_sound.play()
         if ship.sprite.ship_lives <=0:
             thrust.stop()
-            game_over_sound.play()
+            death_time = pygame.time.get_ticks()
             pygame.mixer.music.stop()
             game_state = GAMEOVER
         else:
@@ -287,7 +307,11 @@ def restart():
     ship.add(Ship())
     SCORE = 0
     pygame.mixer.music.play(-1)
-
+def draw_lives():
+    ship_img_hud = pygame.transform.smoothscale_by(ship_img, 0.8)
+    for i in range(ship.sprite.ship_lives):
+        ship_rect = ship_img.get_rect(topright=(780 - i * 40, 20))
+        screen.blit(ship_img_hud, ship_rect)
 while is_running:
     
     Score_surf = menu_font.render(f"Score: {SCORE}",False, 'white')
@@ -306,6 +330,10 @@ while is_running:
                 asteroids.add(Asteroids(3))
 
         elif game_state == GAMEOVER:
+            if pygame.time.get_ticks() - death_time > 700 and not gameover_played :
+                ship_explode_sound.stop()
+                game_over_sound.play()
+                gameover_played = True
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_r:
                     restart()
@@ -320,18 +348,16 @@ while is_running:
         asteroids.update()
         bullets.update()
         bullets.draw(screen)
-        for i in range(ship.sprite.ship_lives):
-            ship_rect = ship_img.get_rect(topright=(780 - i * 40, 20))
-            screen.blit(ship_img, ship_rect)
+        asteroids.draw(screen)
         if ship.sprite.invincible:
             if (pygame.time.get_ticks() // 150) % 2 == 0:
                 ship.draw(screen)
         else:
             ship.draw(screen)
-        asteroids.draw(screen)
         bullet_collision(bullets,asteroids)
         ship_collision(ship,asteroids)
-        Score_rect_playing = Score_surf.get_rect(topleft=(20,40))
+        draw_lives()
+        Score_rect_playing = Score_surf.get_rect(topleft=(20,30))
         screen.blit(Score_surf, Score_rect_playing)
     if game_state == GAMEOVER:
         Score_rect = Score_surf.get_rect(center = (400, 200))
